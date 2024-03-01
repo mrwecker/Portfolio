@@ -1,0 +1,103 @@
+/*Business Question #4
+Wild West wants a switch traffic volume comparisons for international long distance calls. For each switch id, Wild West needs to compare the number of messages and minutes for one month to the same numbers of the following month. To get accurate traffic comparisons, these numbers need to be reported by the CST hour the call was connected. To better do volume planning, they need to also see the percentage change, up of down, in messages and minutes from one month to another for any two given months. Use January and February 1999 data for signoff.*/
+
+/* My understanding is to show switch ID comparison. This needs to be reported by CST hour 
+as we are comparing international calls. 
+CST is required to have a static time marker when comparing dates in different time zones. 
+While the percentage changes seem confusing, I guess this is because it isn't a real dataset. 
+It would be very unlikely that total minutes between 2 months with different amounts of days 
+per month would have the exact same amount of minutes. */
+
+--Calculate total messages and minutes for January, reported by CST hour
+WITH jan AS
+    (SELECT
+        LOCAL_SW_ID,
+        COUNT(CON_CST) AS jan_total_msgs,
+        ROUND(SUM((CON_SEC/60)+CON_MIN),2) AS jan_total_mins
+-- COUNT(CON_CST) over (PARTITION BY LOCAL_SW_ID ORDER BY ) AS jan_total_msgs
+FROM
+    BMSG9901
+-- Filtering for only international calls by excluding any country codes that aren't present
+WHERE 
+    TERM_CNTRY NOT LIKE '% %'
+GROUP BY
+    LOCAL_SW_ID
+ORDER BY
+    LOCAL_SW_ID DESC
+),
+
+--Calculate total messages and minutes for February, again, by CST hour
+feb AS
+    (SELECT
+        LOCAL_SW_ID,
+        COUNT(CON_CST) AS feb_total_msgs,
+        ROUND(SUM((CON_SEC/60)+CON_MIN),2) AS feb_total_mins
+FROM
+    BMSG9902
+--Filtering for only international calls by excluding any country codes that aren't present
+WHERE 
+    TERM_CNTRY NOT LIKE '% %'
+GROUP BY
+    LOCAL_SW_ID
+ORDER BY
+    LOCAL_SW_ID DESC
+),
+
+-- Compare Switch IDs, total minutes and messages. Show percentage change between months for each metric 
+per_change AS
+(SELECT
+    jan.LOCAL_SW_ID,
+    jan_total_msgs,
+    feb_total_msgs,
+    ROUND((feb.feb_total_msgs - jan.jan_total_msgs) / jan.jan_total_msgs * 100,2) AS msg_perc_change,
+    jan_total_mins,
+    feb_total_mins,
+    ROUND((feb.feb_total_mins - jan.jan_total_mins) / jan.jan_total_mins * 100,2) AS mins_perc_change
+FROM
+    jan
+LEFT JOIN 
+    feb
+ON 
+    jan.LOCAL_SW_ID=feb.LOCAL_SW_ID
+WHERE
+    jan.LOCAL_SW_ID NOT LIKE '  '
+    --Filter out results without a switch ID
+ORDER BY 
+    LOCAL_SW_ID),
+
+-- Not required, but added overall totals for an umbrella view of totals for stakeholders if intereted.
+totals AS
+(SELECT 
+    'ALL' AS LOCAL_SW_ID,
+    SUM(JAN_TOTAL_MSGS) AS JAN_TOTAL_MSGS,
+    SUM(FEB_TOTAL_MSGS) AS FEB_TOTAL_MSGS,
+    ROUND((SUM(FEB_TOTAL_MSGS) - SUM(JAN_TOTAL_MSGS)) / SUM(JAN_TOTAL_MSGS) * 100,2) AS MSG_PERC_CHANGE,
+    SUM(JAN_TOTAL_MINS) AS JAN_TOTAL_MINS,
+    SUM(FEB_TOTAL_MINS) AS FEB_TOTAL_MINS,
+    ROUND((SUM(FEB_TOTAL_MINS) - SUM(JAN_TOTAL_MINS)) / SUM(JAN_TOTAL_MINS) * 100,2) AS MINS_PERC_CHANGE
+FROM 
+    per_change)
+
+SELECT
+    *
+FROM
+    per_change
+UNION ALL
+SELECT 
+    *
+FROM
+    totals;
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
